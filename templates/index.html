@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Exam Scheduler</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .btn-primary {
+      width: 100%;
+      padding: 10px;
+      font-size: 1.1em;
+    }
+    .exam-type-group {
+      margin-bottom: 15px;
+      padding: 15px;
+      border: 1px solid #dee2e6;
+      border-radius: 5px;
+    }
+    .date-range-group {
+      margin-top: 10px;
+    }
+    .preferences-link {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="text-center mb-4">AI Exam Scheduler</h1>
+    
+    <div class="preferences-link">
+      <a href="{{ url_for('faculty_preferences') }}" class="btn btn-info">
+        <i class="fas fa-user-edit"></i> Set Faculty Preferences
+      </a>
+    </div>
+    
+    <form action="{{ url_for('generate_schedules') }}" method="post">
+      <div class="form-group">
+        <label for="dept_id">Department:</label>
+        <select class="form-control" id="dept_id" name="dept_id" required>
+          <option value="">Select Department</option>
+          {% for dept in departments %}
+            <option value="{{ dept.dept_id }}">{{ dept.dept_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="year_id">Year:</label>
+        <select class="form-control" id="year_id" name="year_id" required>
+          <option value="">Select Year</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="division_id">Division:</label>
+        <select class="form-control" id="division_id" name="division_id">
+          <option value="">All Divisions</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="module_id">Module:</label>
+        <select class="form-control" id="module_id" name="module_id" required>
+          <option value="">Select Module</option>
+          {% for module in modules %}
+            <option value="{{ module.module_id }}">{{ module.module_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="semester">Semester:</label>
+        <select class="form-control" id="semester" name="semester" required>
+          <option value="">Select Semester</option>
+          <option value="1">Semester 1</option>
+          <option value="2">Semester 2</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>Exam Types and Date Ranges:</label>
+        <div id="exam_types_container">
+          {% for exam_type in exam_types %}
+          <div class="exam-type-group mb-3 p-3 border rounded">
+            <div class="form-check mb-2">
+              <input class="form-check-input exam-type-checkbox" type="checkbox" 
+                     id="exam_type_{{ exam_type.exam_type_id }}" 
+                     name="exam_types[]" 
+                     value="{{ exam_type.exam_type_id }}">
+              <label class="form-check-label" for="exam_type_{{ exam_type.exam_type_id }}">
+                {{ exam_type.exam_type_name }}
+              </label>
+            </div>
+            <div class="date-range-group" style="display: none;">
+              <div class="row">
+                <div class="col-md-6">
+                  <label>Start Date:</label>
+                  <input type="date" class="form-control" 
+                         name="start_date_{{ exam_type.exam_type_id }}" 
+                         id="start_date_{{ exam_type.exam_type_id }}">
+                </div>
+                <div class="col-md-6">
+                  <label>End Date:</label>
+                  <input type="date" class="form-control" 
+                         name="end_date_{{ exam_type.exam_type_id }}" 
+                         id="end_date_{{ exam_type.exam_type_id }}">
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      
+      <button type="submit" class="btn btn-primary">Generate Schedules</button>
+    </form>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+  <script>
+    $(document).ready(function() {
+      // Add debouncing to prevent rapid-fire AJAX calls
+      function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+          };
+          clearTimeout(timeout);
+          timeout = setTimeout(later, wait);
+        };
+      }
+
+      function showLoadingSelect($select) {
+        $select.prop('disabled', true).empty().append('<option>Loading…</option>');
+      }
+
+      function resetSelect($select, placeholder) {
+        $select.prop('disabled', false).empty().append(`<option value="">${placeholder}</option>`);
+      }
+
+      // Track if we're currently processing a change
+      let isProcessingChange = false;
+
+      // Debounced function to handle department change
+      const handleDepartmentChange = debounce(function(deptId) {
+        if (isProcessingChange) return;
+        isProcessingChange = true;
+
+        const $year = $('#year_id');
+        const $div = $('#division_id');
+
+        if (!deptId) {
+          resetSelect($year, 'Select Year');
+          resetSelect($div, 'All Divisions');
+          isProcessingChange = false;
+          return;
+        }
+
+        showLoadingSelect($year);
+        $.get('/get_years/' + deptId)
+          .done(function(data) {
+            resetSelect($year, 'Select Year');
+            resetSelect($div, 'All Divisions');
+            if (data.length) {
+              data.forEach(function(year) {
+                $year.append(`<option value="${year.year_id}">${year.year_name}</option>`);
+              });
+            } else {
+              $year.append('<option value="" disabled>No years available</option>');
+            }
+          })
+          .fail(function(xhr, status, error) {
+            console.error('Error loading years:', error);
+            resetSelect($year, 'Select Year');
+            resetSelect($div, 'All Divisions');
+            alert('Error loading years. Please try again.');
+          })
+          .always(function() {
+            isProcessingChange = false;
+          });
+      }, 300); // 300ms debounce
+
+      // Debounced function to handle year change
+      const handleYearChange = debounce(function(deptId, yearId) {
+        if (isProcessingChange) return;
+        isProcessingChange = true;
+
+        const $div = $('#division_id');
+
+        if (!deptId || !yearId) {
+          resetSelect($div, 'All Divisions');
+          isProcessingChange = false;
+          return;
+        }
+
+        showLoadingSelect($div);
+        $.get('/get_divisions/' + deptId + '/' + yearId)
+          .done(function(data) {
+            resetSelect($div, 'All Divisions');
+            if (data.length) {
+              data.forEach(function(division) {
+                $div.append(`<option value="${division.division_id}">${division.division_name}</option>`);
+              });
+            }
+          })
+          .fail(function(xhr, status, error) {
+            console.error('Error loading divisions:', error);
+            resetSelect($div, 'All Divisions');
+            alert('Error loading divisions. Please try again.');
+          })
+          .always(function() {
+            isProcessingChange = false;
+          });
+      }, 300); // 300ms debounce
+
+      // Event handlers with debouncing
+      $('#dept_id').on('change', function() {
+        const deptId = $(this).val();
+        handleDepartmentChange(deptId);
+      });
+
+      $('#year_id').on('change', function() {
+        const deptId = $('#dept_id').val();
+        const yearId = $(this).val();
+        handleYearChange(deptId, yearId);
+      });
+
+      // Handle exam type checkbox changes
+      $('.exam-type-checkbox').on('change', function() {
+        const examTypeId = $(this).val();
+        const dateRangeGroup = $(this).closest('.exam-type-group').find('.date-range-group');
+        if ($(this).is(':checked')) {
+          dateRangeGroup.show();
+          $(`#start_date_${examTypeId}`).prop('required', true);
+          $(`#end_date_${examTypeId}`).prop('required', true);
+        } else {
+          dateRangeGroup.hide();
+          $(`#start_date_${examTypeId}`).prop('required', false);
+          $(`#end_date_${examTypeId}`).prop('required', false);
+        }
+      });
+
+      // Form submission validation
+      $('form').on('submit', function(e) {
+        const selectedExamTypes = $('.exam-type-checkbox:checked');
+        if (selectedExamTypes.length === 0) {
+          e.preventDefault();
+          alert('Please select at least one exam type');
+          return;
+        }
+
+        let isValid = true;
+        selectedExamTypes.each(function() {
+          const examTypeId = $(this).val();
+          const startDate = $(`#start_date_${examTypeId}`).val();
+          const endDate = $(`#end_date_${examTypeId}`).val();
+          
+          if (!startDate || !endDate) {
+            isValid = false;
+            return false;
+          }
+          
+          if (new Date(startDate) > new Date(endDate)) {
+            isValid = false;
+            return false;
+          }
+        });
+
+        if (!isValid) {
+          e.preventDefault();
+          alert('Please provide valid date ranges for all selected exam types');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

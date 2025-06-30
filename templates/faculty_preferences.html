@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Faculty Preferences{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Faculty Preferences</h1>
+    
+    <!-- Add New Preference Form -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Add New Preference</h5>
+        </div>
+        <div class="card-body">
+            <form action="{{ url_for('add_preference') }}" method="post">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="class_id">Class</label>
+                            <select class="form-control" id="class_id" name="class_id" required>
+                                <option value="">Select Class</option>
+                                {% for c in classes %}
+                                <option value="{{ c.class_id }}">
+                                    {{ c.dept_name }} - {{ c.year_name }} - {{ c.division_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="faculty_id">Faculty</label>
+                            <select class="form-control" id="faculty_id" name="faculty_id" required disabled>
+                                <option value="">Select Faculty</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-group">
+                            <label for="subject_id">Subject</label>
+                            <select class="form-control" id="subject_id" name="subject_id" required disabled>
+                                <option value="">Select Subject</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-group">
+                            <label for="exam_type_id">Exam Type</label>
+                            <select class="form-control" id="exam_type_id" name="exam_type_id" required disabled>
+                                <option value="">Select Type</option>
+                                {% for et in exam_types %}
+                                <option value="{{ et.exam_type_id }}">{{ et.exam_type_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-group">
+                            <label for="preferred_date">Preferred Date</label>
+                            <input type="date" class="form-control" id="preferred_date" name="preferred_date" required disabled>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary mt-3" id="submit_btn" disabled>Add Preference</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing Preferences -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Existing Preferences</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Class</th>
+                            <th>Faculty</th>
+                            <th>Subject</th>
+                            <th>Exam Type</th>
+                            <th>Preferred Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pref in preferences %}
+                        <tr>
+                            <td>{{ pref.dept_name }} - {{ pref.year_name }} - {{ pref.division_name }}</td>
+                            <td>{{ pref.faculty_name }}</td>
+                            <td>{{ pref.subject_name }}</td>
+                            <td>{{ pref.exam_type_name }}</td>
+                            <td>{{ pref.preferred_date.strftime('%d-%b-%Y') }}</td>
+                            <td>
+                                <form action="{{ url_for('delete_preference') }}" method="post" style="display: inline;">
+                                    <input type="hidden" name="preference_id" value="{{ pref.preference_id }}">
+                                    <button type="submit" class="btn btn-danger btn-sm" 
+                                            onclick="return confirm('Are you sure you want to delete this preference?')">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const classSelect = document.getElementById('class_id');
+    const facultySelect = document.getElementById('faculty_id');
+    const subjectSelect = document.getElementById('subject_id');
+    const examTypeSelect = document.getElementById('exam_type_id');
+    const dateInput = document.getElementById('preferred_date');
+    const submitBtn = document.getElementById('submit_btn');
+
+    // Function to enable/disable form elements
+    function updateFormState() {
+        const classSelected = classSelect.value !== '';
+        facultySelect.disabled = !classSelected;
+        subjectSelect.disabled = !classSelected;
+        examTypeSelect.disabled = !classSelected;
+        dateInput.disabled = !classSelected;
+        submitBtn.disabled = !classSelected;
+    }
+
+    // Function to load faculty for selected class
+    function loadFaculty(classId) {
+        if (!classId) {
+            facultySelect.innerHTML = '<option value="">Select Faculty</option>';
+            facultySelect.disabled = true;
+            return;
+        }
+
+        // Show loading state
+        facultySelect.innerHTML = '<option value="">Loading...</option>';
+        facultySelect.disabled = true;
+
+        // Fetch faculty for the selected class
+        fetch(`/get_faculty_for_class/${classId}`)
+            .then(response => response.json())
+            .then(data => {
+                facultySelect.innerHTML = '<option value="">Select Faculty</option>';
+                data.forEach(faculty => {
+                    const option = document.createElement('option');
+                    option.value = faculty.faculty_id;
+                    option.textContent = faculty.faculty_name;
+                    facultySelect.appendChild(option);
+                });
+                facultySelect.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error loading faculty:', error);
+                facultySelect.innerHTML = '<option value="">Error loading faculty</option>';
+            });
+    }
+
+    // Function to load subjects for selected class and faculty
+    function loadSubjects(classId, facultyId) {
+        if (!classId || !facultyId) {
+            subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+            subjectSelect.disabled = true;
+            return;
+        }
+
+        // Show loading state
+        subjectSelect.innerHTML = '<option value="">Loading...</option>';
+        subjectSelect.disabled = true;
+
+        // Fetch subjects for the selected class and faculty
+        fetch(`/get_subjects_for_faculty/${classId}/${facultyId}`)
+            .then(response => response.json())
+            .then(data => {
+                subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+                data.forEach(subject => {
+                    const option = document.createElement('option');
+                    option.value = subject.subject_id;
+                    option.textContent = subject.subject_name;
+                    subjectSelect.appendChild(option);
+                });
+                subjectSelect.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error loading subjects:', error);
+                subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+            });
+    }
+
+    // Event listeners
+    classSelect.addEventListener('change', function() {
+        const classId = this.value;
+        updateFormState();
+        loadFaculty(classId);
+        // Reset other fields
+        subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+        subjectSelect.disabled = true;
+    });
+
+    facultySelect.addEventListener('change', function() {
+        const classId = classSelect.value;
+        const facultyId = this.value;
+        loadSubjects(classId, facultyId);
+    });
+
+    // Initial state
+    updateFormState();
+});
+</script>
+{% endblock %}
